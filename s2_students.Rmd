@@ -1,11 +1,12 @@
 ---
 title: "Introduction to Dimensional Reduction in R - UseR!22 (Section II)"
 author: "Isabella Bicalho Frazeto"
-date: '2022-06-19'
+date: "2022-06-20"
 output: html_document
 ---
 
 # Section 1
+
 In this section we will explore the dataset for PCA and ICA and define a little bit more how to to use tidymodels. 
 
 ## Importing libraries
@@ -17,6 +18,7 @@ tidymodels_prefer()
 library(bestNormalize)
 library(cowplot)
 library(ggforce)
+library(fastICA)
 library(forcats)
 library(tidytext)
 ```
@@ -26,7 +28,6 @@ library(tidytext)
 Let's inspect the dataset
 
 ```{r}
-
 library(beans)
 skimr::skim(beans)
 colnames(beans)
@@ -35,50 +36,40 @@ colnames(beans)
 Taking a closer look at area:
 
 ```{r}
-
-beans %>%
+beans |> 
   ggplot(aes(x = area)) +
   geom_histogram() +
   theme_minimal() +
   panel_border(color = "black")
-
 ```
 
 Would log-scaling make a difference?
 
 ```{r}
-
-beans %>%
+beans |> 
   ggplot(aes(x = log(area))) +
   geom_histogram() +
   theme_minimal() +
   panel_border(color = "black")
-  
 ```
-
-
 
 ### Our preprocessing
 
 We have seen in the previous section that we have to some preprocessing. Here, we will:
-1) remove zero_variance from the data
-2) do order quantile normalizing 
-3) center and scale the data (normalize)
+  1) remove zero_variance from the data
+  2) do order quantile normalizing 
+  3) center and scale the data (normalize)
 
 ```{r}
-  
-beans_preproc_rec <-   recipe(class ~ ., data = beans) %>%
-                          step_zv(all_numeric_predictors()) %>%
-                          step_orderNorm(all_numeric_predictors()) %>% 
-                          step_normalize(all_numeric_predictors())
-
-
+beans_preproc_rec <-   recipe(class ~ ., data = beans) |> 
+  step_zv(all_numeric_predictors()) |> 
+  step_orderNorm(all_numeric_predictors()) |> 
+  step_normalize(all_numeric_predictors())
 ```
 
 We have a recipe, we can prepare our data.
 
 ```{r}
-
 beans_rec_prepped <- prep(beans_preproc_rec,
                           verbose = TRUE)
 
@@ -89,25 +80,23 @@ We can bake our recipe to get our results
 
 ```{r}
 beans_processed <- bake(beans_rec_prepped,
-                           new_data = NULL)
+                        new_data = NULL)
 ```
 
 Recall the previous plot: 
 
 ```{r}
-
-beans %>%
+beans |> 
   ggplot(aes(x = area)) +
   geom_histogram() +
   theme_minimal() +
   panel_border(color = "black")
-
 ```
 
 Let's now take a look at the area now
 
 ```{r}
-beans_processed %>%
+beans_processed |> 
   ggplot(aes(x = area)) +
   geom_histogram() +
   theme_minimal() +
@@ -117,23 +106,22 @@ beans_processed %>%
 # Section 2
 
 ## PCA
+
 Let's add pca recipe to our pre-processing recipe (don't forget to prep)!
 
 ```{r}
-
-beans_prepped_PCA  <- beans_rec_prepped %>%
-            
-
+beans_prepped_PCA  <- beans_rec_prepped |> 
+  step_pca(all_numeric_predictors(), num_comp = 6) |> 
+  prep()
 ```
 
 We will get the id from the recipe to get the variance. 
 
 ```{r}
-
-step_id_PCA <- beans_prepped_PCA %>%
-                  tidy() %>%
-                  filter(type == 'pca') %>%
-                  pull(id)
+step_id_PCA <- beans_prepped_PCA |> 
+  tidy() |> 
+  filter(type == 'pca') |> 
+  pull(id)
 
 beans_variance_PCA <- tidy(beans_prepped_PCA,
                            id = step_id_PCA,
@@ -143,54 +131,52 @@ beans_variance_PCA <- tidy(beans_prepped_PCA,
 Please note that there are several types of variances!
 
 ```{r}
-
+beans_variance_PCA |>
+  pull(terms) |> 
+  as_factor() |> 
+  levels()
 ```
-
 
 ## Percent Variance
 
 How do we now what are the the PC that matter the most?
 
 ```{r}
-
-beans_variance_PCA %>%
-  filter(terms == "percent variance") %>%
+beans_variance_PCA |> 
+  filter(terms == "percent variance") |> 
   ggplot(aes(x = component, y = value)) +
   geom_col() +
   theme_minimal_grid() +
-  panel_border(color = "black")
+  panel_border(color = "black") +
+  ylab("percent variance")
 ```
 
-
 ## Cumulative percent variance
+
 Altogether, how much do they explain from our variance?
 
 ```{r}
-
-beans_variance_PCA %>%
-  filter(terms == "cumulative percent variance") %>%
+beans_variance_PCA |> 
+  filter(terms == "cumulative percent variance") |> 
   ggplot(aes(x = component, y = value)) +
   geom_col() +
   theme_minimal_grid() +
-  panel_border(color = "black")
-
+  panel_border(color = "black") +
+  ylab("cumulative percent variance")
 ```
-
 
 # Let's inspect the components and their terms 
 ```{r}
-
-beans_PCA_tidied <- beans_prepped_PCA %>% 
+beans_PCA_tidied <- beans_prepped_PCA |>  
                     tidy(id = step_id_PCA)
-
 ```
 
 How do we see how our features relate to each main component?
 
 ```{r}
-beans_PCA_tidied %>%
-  filter(component %in% paste0("PC", 1:3)) %>%
-  mutate(component = fct_inorder(component)) %>%
+beans_PCA_tidied |> 
+  filter(component %in% paste0("PC", 1:3)) |> 
+  mutate(component = fct_inorder(component)) |> 
   ggplot(aes(value, terms, fill = terms)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~component, nrow = 1) +
@@ -201,16 +187,16 @@ beans_PCA_tidied %>%
 ## Alternative way to view the same information
 
 ```{r}
-beans_PCA_tidied %>%
-  filter(component %in% paste0("PC", 1:3)) %>%
+beans_PCA_tidied |> 
+  filter(component %in% paste0("PC", 1:3)) |> 
   mutate(
     is_positive = value > 0,
     abs_value = abs(value)
-  ) %>%
-  group_by(component) %>%
-  slice_max(abs_value, n = 5) %>%
-  ungroup() %>%
-  mutate(terms = reorder_within(terms, abs(value), component)) %>%
+  ) |> 
+  group_by(component) |> 
+  slice_max(abs_value, n = 5) |> 
+  ungroup() |> 
+  mutate(terms = reorder_within(terms, abs(value), component)) |> 
   ggplot(aes(abs(value), terms, fill = value > 0)) +
   geom_col() +
   facet_wrap(~component, nrow = 1, scales = "free_y") +
@@ -220,20 +206,19 @@ beans_PCA_tidied %>%
     y = NULL, fill = "Is Positive?"
   ) +
   theme_minimal_grid()
-  
 ```
 
 ## Let's bake our recipe!
 
 ```{r}
+beans_baked_PCA <- beans_prepped_PCA |> 
+  bake(new_data = NULL)
 
-beans_baked_PCA <-
 beans_baked_PCA
 ```
 
-
 ```{r}
-beans_baked_PCA %>% 
+beans_baked_PCA |>  
   ggplot(aes(x = .panel_x, y = .panel_y, color = class, fill = class)) +
   geom_point(alpha = 0.4, size = 0.5) +
   geom_autodensity(alpha = .3) +
@@ -243,19 +228,17 @@ beans_baked_PCA %>%
   theme_minimal_grid() +
   panel_border(color = "black") +
   theme(legend.position = "bottom")
-
-
 ```
 
 ## Zooming in
+
 ```{r}
-beans_baked_PCA %>%
+beans_baked_PCA |> 
   ggplot(aes(PC1, PC2, label = class)) +
   geom_point(aes(color = class), alpha = 0.7, size = 2) +
   labs(color = NULL) +
   theme_minimal_grid()
 ```
-
 
 ## ICA
 
@@ -265,17 +248,20 @@ We will do the same for the ICA:
   3) Bake the recipe
 
 ```{r}
-beans_rec_ICA <- beans_rec_prepped %>%
+beans_rec_ICA <- beans_rec_prepped |> 
+  step_ica(all_numeric_predictors(), num_comp = 5)
 
-beans_prepped_ICA <- 
+beans_prepped_ICA <- beans_rec_ICA |> 
+  prep()
 
-beans_baked_ICA <- 
+beans_baked_ICA <- beans_prepped_ICA |> 
+  bake(new_data = NULL)
 ```
 
 ## Looking at our baked results
 
 ```{r}
-beans_baked_ICA %>% 
+beans_baked_ICA |> 
   ggplot(aes(x = .panel_x, y = .panel_y, color = class, fill = class)) +
   geom_point(alpha = 0.4, size = 0.5) +
   geom_autodensity(alpha = .3) +
@@ -285,37 +271,35 @@ beans_baked_ICA %>%
   theme_minimal_grid() +
   panel_border(color = "black") +
   theme(legend.position = "bottom")
-
 ```
 
 ## Similarly, we can inspect the best looking one
+
 ```{r}
-beans_baked_ICA %>%
-  ggplot(aes(IC1, IC3, label = class)) +
+beans_baked_ICA |> 
+  ggplot(aes(IC4, IC5, label = class)) +
   geom_point(aes(color = class), alpha = 0.7, size = 2) +
   labs(color = NULL) +
   theme_minimal_grid()
 ```
 
 ## Checking how much each feature contributes to each component
-```{r}
 
-step_id_ICA <- beans_prepped_ICA %>%
-  tidy() %>%
-  filter(type == 'ica') %>%
+```{r}
+step_id_ICA <- beans_prepped_ICA |> 
+  tidy() |> 
+  filter(type == 'ica') |> 
   pull(id)
 
-beans_ICA_tidied <- beans_prepped_ICA %>% 
+beans_ICA_tidied <- beans_prepped_ICA |>  
                     tidy(id = step_id_ICA)
 
-beans_ICA_tidied %>%
-  filter(component %in% paste0("IC", (1:3))) %>%
-  mutate(component = fct_inorder(component)) %>%
+beans_ICA_tidied |> 
+  filter(component %in% paste0("IC", (1:3))) |> 
+  mutate(component = fct_inorder(component)) |> 
   ggplot(aes(value, terms, fill = terms)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~component, nrow = 1) +
   labs(y = NULL) +
   theme_minimal_grid()
 ```
-
-

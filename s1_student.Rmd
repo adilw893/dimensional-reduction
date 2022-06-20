@@ -6,6 +6,7 @@ output: html_document
 ---
 
 # Section 1
+
 In this section we will explore the dataset for PCA and ICA and define a little bit more how to to use tidymodels. 
 
 ## Importing libraries
@@ -26,7 +27,6 @@ library(tidytext)
 Let's inspect the dataset
 
 ```{r}
-
 library(beans)
 skimr::skim(beans)
 colnames(beans)
@@ -35,16 +35,18 @@ colnames(beans)
 Taking a closer look at area:
 
 ```{r}
-
-
+beans |> 
+  ggplot(aes(x = area)) +
+  geom_histogram()
 ```
 
 Would log-scaling make a difference?
 
 ```{r}
-
+beans |> 
+  ggplot(aes(x = log(area))) +
+  geom_histogram()
 ```
-
 
 ## Tidy models
 
@@ -52,66 +54,57 @@ Would log-scaling make a difference?
 set.seed(126)
 beans_split <- initial_split(beans, prop = 0.80)
 beans_train <- training(beans_split)
-beans_test  <-  testing(beans_split)
-
+beans_test <- testing(beans_split)
 ```
 
-
 ### Recipes
-A step-by-step description of how you process your data prior to the analysis.
 
+A step-by-step description of how you process your data prior to the analysis.
 
 ```{r}
 recipe_rf <- recipe(class ~ ., data = beans_train) 
-
 ```
 
 ### What is our model? 
 
 ```{r}
 rf_model <- rand_forest(
-            mode = "classification",
-            engine = "ranger"
-            )
+  mode = "classification",
+  engine = "ranger",
+  trees = 100
+)
 ```
 
 ### Workflow
 
 ```{r}
-
-rf_wk <- workflow() %>%
-          add_recipe(recipe_rf) %>%
+rf_wk <- workflow() |> 
+          add_recipe(recipe_rf) |> 
           add_model(rf_model)
-
 ```
 
 ### Fitting the workflow 
 
 ```{r}
 rf_fit <- fit(rf_wk, beans_train)
-
 ```
 
 ### Where do I get my results?
 
 ```{r}
 rf_predict <- predict(rf_fit, beans_test)
-
 ```
-
 
 ```{r}
 rf_aug <- augment(rf_fit, beans_test)
-
 ```
 
 ## Metrics
 
 ```{r}
-rf_aug %>% 
-  recall(truth = class, estimate = .pred_class,  estimator = "macro_weighted")
+rf_aug |>  
+  recall(truth = class, estimate = .pred_class, estimator = "macro_weighted")
 ```
-
 
 ### Our preprocessing
 
@@ -121,16 +114,17 @@ We have seen in the previous section that we have to some preprocessing. Here, w
 3) center and scale the data (normalize)
 
 ```{r}
-  
-beans_preproc_rec <-
-
+beans_preproc_rec <- recipe(formula = class ~ ., data = beans) |> 
+  step_zv(all_numeric_predictors()) |> 
+  step_orderNorm(all_numeric_predictors()) |> 
+  step_normalize(all_numeric_predictors())
 ```
 
 We have a recipe, we can prepare our data.
 
 ```{r}
-
-beans_rec_prepped <-
+beans_rec_prepped <- beans_preproc_rec |>
+  prep()
 
 beans_rec_prepped
 ```
@@ -138,28 +132,26 @@ beans_rec_prepped
 We can bake our recipe to get our results
 
 ```{r}
-beans_processed <- 
+beans_processed <- beans_rec_prepped |> 
+  bake(new_data = NULL)
 ```
 
 Recall the previous plot: 
 
 ```{r}
-
-beans %>%
+beans |> 
   ggplot(aes(x = area)) +
   geom_histogram() +
   theme_minimal() +
   panel_border(color = "black")
-
 ```
 
 Let's now take a look at the area now
 
 ```{r}
-beans_processed %>%
+beans_processed |> 
   ggplot(aes(x = area)) +
   geom_histogram() +
   theme_minimal() +
   panel_border(color = "black")
 ```
-
